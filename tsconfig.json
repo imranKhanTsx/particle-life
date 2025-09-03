@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Environment
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM","DOM.Iterable"],
+
+    // Output
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+
+    // Type Checking
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+
+    "types": ["@webgpu/types"],
+
+    // Module Resolution
+    "moduleResolution": "Node",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // JSX (only if you plan React wrapper later)
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "global.d.ts"]
+}
