@@ -21,7 +21,7 @@ export class ParticleLife {
   bindGroup?: GPUBindGroup;
   velocities: Float32Array<ArrayBuffer>;
   speciesColors: Record<number, [number, number, number]>;
-  speciesIds: Uint8Array<ArrayBuffer> | undefined;
+  speciesIds: Uint8Array<ArrayBuffer>;
 
   constructor(canvas: HTMLCanvasElement, options: ParticleLifeOptions = {}) {
     console.log(vertex_shader);
@@ -30,15 +30,16 @@ export class ParticleLife {
     this.options = {
       particleCount: options.particleCount ?? 1000,
       species: options.species ?? 3,
-      interactionRadius: options.interactionRadius ?? 0.01,
+      interactionRadius: options.interactionRadius ?? 0.02,
     };
     // Example: 3 species
     this.speciesColors = {
       0: [1, 0, 0],   // red
       1: [0, 1, 0],   // green
-      2: [0, 0, 1],   // blue
-      // 3: [1, 1, 0],   // yellow
+      // 2: [0, 0, 1],   // blue
+      2: [1, 1, 0],   // yellow
     };
+    this.speciesIds = new Uint8Array(this.options.particleCount);
 
 
     // You need to store velocities per particle
@@ -73,7 +74,7 @@ export class ParticleLife {
 
     // 1️⃣ Create particles
 
-    this.speciesIds = new Uint8Array(this.options.particleCount);
+
     for (let i = 0; i < this.options.particleCount; i++) {
       this.speciesIds[i] = Math.floor(Math.random() * this.options.species); // assign random species
     }
@@ -174,15 +175,10 @@ export class ParticleLife {
 
     // Example: 3 species, value = strength of attraction (+) or repulsion (-)
     const interactionMatrix: number[][] = [
-      [0, 0.01, -0.01],  // Red with [Red, Green, Blue]
-      [-0.01, 0, 0.01],   // Green with [Red, Green, Blue]
-      [0.01, -0.01, 0],  // Blue with [Red, Green, Blue]
+      [0, 0.001, -0.001],  // Red with [Red, Green, Blue]
+      [-0.001, 0, 0.001],   // Green with [Red, Green, Blue]
+      [0.001, -0.001, 0],  // Blue with [Red, Green, Blue]
     ];
-
-    // const speciesIds = new Uint8Array(this.options.particleCount);
-    // for (let i = 0; i < this.options.particleCount; i++) {
-    //   speciesIds[i] = Math.floor(Math.random() * this.options.species); // assign random species
-    // }
 
     const frame = () => {
       const encoder = this.device.createCommandEncoder();
@@ -206,18 +202,17 @@ export class ParticleLife {
       };
 
       // --- 1️⃣ Compute species interactions ---
-      const radius = this.options.interactionRadius / 100; // normalize for -1..1 space
-
+      const radius = this.options.interactionRadius; // normalize for -1..1 space
       for (let i = 0; i < this.options.particleCount; i++) {
-        let dx = this.velocities[i * 2 + 0]!;
-        let dy = this.velocities[i * 2 + 1]!;
+        let vx = this.velocities[i * 2 + 0]!;
+        let vy = this.velocities[i * 2 + 1]!;
 
         const baseIndexA = i * 4 * 7;
         let cxA = this.particleData[baseIndexA + 0]!;
         let cyA = this.particleData[baseIndexA + 1]!;
 
-        if (!this.speciesIds) throw new Error("speciesIds is undefined");
         const speciesA = this.speciesIds[i]!;
+        const row = interactionMatrix[speciesA];
 
         for (let j = 0; j < this.options.particleCount; j++) {
           if (i === j) continue;
@@ -225,36 +220,40 @@ export class ParticleLife {
           const baseIndexB = j * 4 * 7;
           const cxB = this.particleData[baseIndexB + 0]!;
           const cyB = this.particleData[baseIndexB + 1]!;
-
           const speciesB = this.speciesIds[j]!;
+          const strength = row?.[speciesB];
+          if (strength === undefined) continue;
 
           const dxAB = cxB - cxA;
           const dyAB = cyB - cyA;
           const dist = Math.sqrt(dxAB * dxAB + dyAB * dyAB);
 
-          if (dist < radius && dist > 0 && interactionMatrix[speciesA] !== undefined && interactionMatrix[speciesA][speciesB] !== undefined) {
-            const force = interactionMatrix[speciesA][speciesB] / dist;
-            dx += dxAB * force;
-            dy += dyAB * force;
+          if (dist > 0 && dist < radius) {
+            const force = strength / dist;
+            vx += dxAB * force;
+            vy += dyAB * force;
           }
         }
 
         // --- 2️⃣ Update positions ---
-        cxA += dx;
-        cyA += dy;
+        cxA += vx;
+        cyA += vy;
         cxA = wrap(cxA);
         cyA = wrap(cyA);
 
-        // Write back to all 4 vertices
         for (let k = 0; k < 4; k++) {
           const idx = baseIndexA + k * 7;
           this.particleData[idx + 0] = cxA;
           this.particleData[idx + 1] = cyA;
         }
 
-        // Save velocity
-        this.velocities[i * 2 + 0] = dx;
-        this.velocities[i * 2 + 1] = dy;
+        // Apply friction
+        const friction = 0.5; // closer to 1 = slippery, smaller = more damping
+        vx *= friction;
+        vy *= friction;
+
+        this.velocities[i * 2 + 0] = vx;
+        this.velocities[i * 2 + 1] = vy;
       }
 
       // Push updated positions to GPU
