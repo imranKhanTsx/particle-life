@@ -6,14 +6,15 @@ struct VertexOut {
 
 @fragment
 fn fragment_main(in: VertexOut) -> @location(0) vec4f {
-    // Compute distance from center in local quad space
     let dist = length(in.localOffset);
 
-    // If fragment is outside unit circle, throw it away
-    if (dist > 1.0) {
+    // fade edge between 0.9 and 1.0
+    let alpha = 1.0 - smoothstep(0.1, 1.0, dist);
+
+    // kill pixels fully outside (optional, saves fillrate)
+    if (alpha <= 0.0) {
         discard;
     }
 
-    // Otherwise paint it
-    return vec4f(in.color, 1.0);
+    return vec4f(in.color, alpha);
 }

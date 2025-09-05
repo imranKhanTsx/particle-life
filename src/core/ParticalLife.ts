@@ -1,5 +1,6 @@
 import vertex_shader from "./shaders/vertex.wgsl?raw";
 import fragment_shader from "./shaders/fragment.wgsl?raw";
+import compute_shader from "./shaders/compute.wgsl?raw";
 
 export interface ParticleLifeOptions {
   particleCount?: number;
@@ -22,6 +23,8 @@ export class ParticleLife {
   velocities: Float32Array<ArrayBuffer>;
   speciesColors: Record<number, [number, number, number]>;
   speciesIds: Uint8Array<ArrayBuffer>;
+  computePipeline!: GPUComputePipeline;
+  computeBindGroup!: GPUBindGroup;
 
   constructor(canvas: HTMLCanvasElement, options: ParticleLifeOptions = {}) {
     console.log(vertex_shader);
@@ -67,55 +70,55 @@ export class ParticleLife {
 
     const cornerOffsets: [number, number][] = [
       [-1, -1], // bottom-left
-      [1, -1], // bottom-right
-      [1, 1], // top-right
-      [-1, 1], // top-left
+      [1, -1],  // bottom-right
+      [1, 1],   // top-right
+      [-1, 1],  // top-left
     ];
 
-    // 1️⃣ Create particles
+    // --- create particle data (your code unchanged) ---
+    const distribution = [0.4, 0.3, 0.3];
+    const counts = distribution.map(r => Math.floor(r * this.options.particleCount));
 
-
-    for (let i = 0; i < this.options.particleCount; i++) {
-      this.speciesIds[i] = Math.floor(Math.random() * this.options.species); // assign random species
+    let index = 0;
+    for (let s = 0; s < counts.length; s++) {
+      for (let j = 0; j < counts[s]!; j++) {
+        this.speciesIds[index++] = s;
+      }
     }
 
-
-    // NEW (4 vertices per particle)
     this.particleData = new Float32Array(this.options.particleCount * 4 * 7);
-
 
     for (let i = 0; i < this.options.particleCount; i++) {
       const cx = Math.random() * 2 - 1;
       const cy = Math.random() * 2 - 1;
-      // Generate a random color for this particle
       const [r, g, b] = this.speciesColors[Number(this.speciesIds[i])] ?? [1, 1, 1];
 
       for (let j = 0; j < 4; j++) {
         const [lx, ly] = cornerOffsets[j]!;
         const baseIndex = (i * 4 + j) * 7;
 
-        this.particleData[baseIndex + 0] = cx;    // particle center x
-        this.particleData[baseIndex + 1] = cy;    // particle center y
-        this.particleData[baseIndex + 2] = r;     // red
-        this.particleData[baseIndex + 3] = g;     // green
-        this.particleData[baseIndex + 4] = b;     // blue
-        this.particleData[baseIndex + 5] = lx;    // localOffset x
-        this.particleData[baseIndex + 6] = ly;    // localOffset y
+        this.particleData[baseIndex + 0] = cx;
+        this.particleData[baseIndex + 1] = cy;
+        this.particleData[baseIndex + 2] = r;
+        this.particleData[baseIndex + 3] = g;
+        this.particleData[baseIndex + 4] = b;
+        this.particleData[baseIndex + 5] = lx;
+        this.particleData[baseIndex + 6] = ly;
       }
     }
-    console.log(this.particleData);
 
     this.particleBuffer = this.device.createBuffer({
       size: this.particleData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage:
+        GPUBufferUsage.VERTEX |
+        GPUBufferUsage.COPY_DST |
+        GPUBufferUsage.STORAGE, // 👈 needed for compute
       mappedAtCreation: true,
     });
     new Float32Array(this.particleBuffer.getMappedRange()).set(this.particleData);
     this.particleBuffer.unmap();
-    // Indices for one quad (2 triangles)
-    // const quadIndices = new Uint16Array([0, 1, 2, 0, 2, 3]);
 
-    // Expand this for all particles
+    // --- indices (your code unchanged) ---
     const allIndices = new Uint16Array(this.options.particleCount * 6);
     for (let i = 0; i < this.options.particleCount; i++) {
       const vertexOffset = i * 4;
@@ -136,12 +139,32 @@ export class ParticleLife {
     new Uint16Array(this.indexBuffer.getMappedRange()).set(allIndices);
     this.indexBuffer.unmap();
 
-    // 2️⃣ Create shader module
-    // const shaderModule = this.device.createShaderModule({ code: shader });
+    // --- shader modules ---
     const vertexModule = this.device.createShaderModule({ code: vertex_shader });
     const fragmentModule = this.device.createShaderModule({ code: fragment_shader });
+    const computeModule = this.device.createShaderModule({ code: compute_shader });
 
-    // 3️⃣ Create render pipeline
+    // --- compute pipeline ---
+    this.computePipeline = this.device.createComputePipeline({
+      layout: "auto",
+      compute: {
+        module: computeModule,
+        entryPoint: "compute_main",
+      },
+    });
+
+    // ✅ compute bind group (connects buffer to compute shader)
+    this.computeBindGroup = this.device.createBindGroup({
+      layout: this.computePipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this.particleBuffer },
+        },
+      ],
+    });
+
+    // --- render pipeline ---
     this.pipeline = this.device.createRenderPipeline({
       layout: "auto",
       vertex: {
@@ -151,7 +174,7 @@ export class ParticleLife {
           {
             arrayStride: 7 * 4,
             attributes: [
-              { shaderLocation: 0, offset: 0, format: "float32x2" }, // position (cx, cy)
+              { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
               { shaderLocation: 1, offset: 2 * 4, format: "float32x3" }, // color
               { shaderLocation: 2, offset: 5 * 4, format: "float32x2" }, // local offset
             ],
@@ -161,12 +184,38 @@ export class ParticleLife {
       fragment: {
         module: fragmentModule,
         entryPoint: "fragment_main",
-        targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
+        targets: [
+          {
+            format: navigator.gpu.getPreferredCanvasFormat(),
+            blend: {
+              color: {
+                srcFactor: "src-alpha",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+              alpha: {
+                srcFactor: "one",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+            },
+          },
+        ],
       },
       primitive: { topology: "triangle-list" },
     });
 
     console.log("WebGPU initialized with particles!");
+    console.log("Species counts:", this.speciesCountbyId());
+  }
+
+  speciesCountbyId() {
+    const counts: Record<number, number> = {};
+    for (let i = 0; i < this.speciesIds.length; i++) {
+      const id = this.speciesIds[i]!;
+      counts[id] = (counts[id] || 0) + 1;
+    }
+    return counts;
   }
 
 
@@ -174,10 +223,11 @@ export class ParticleLife {
     if (!this.device) throw new Error("Call init() first");
 
     // Example: 3 species, value = strength of attraction (+) or repulsion (-)
+    const interactionValue = 0.001;
     const interactionMatrix: number[][] = [
-      [0, 0.001, -0.001],  // Red with [Red, Green, Blue]
-      [-0.001, 0, 0.001],   // Green with [Red, Green, Blue]
-      [0.001, -0.001, 0],  // Blue with [Red, Green, Blue]
+      [0.001, interactionValue + 0.001, -interactionValue + 0.001],  // Red with [Red, Green, Blue]
+      [-interactionValue + 0.001, 0.001, interactionValue + 0.001],   // Green with [Red, Green, Blue]
+      [interactionValue + 0.001, -interactionValue + 0.001, 0.001],  // Blue with [Red, Green, Blue]
     ];
 
     const frame = () => {
@@ -224,15 +274,30 @@ export class ParticleLife {
           const strength = row?.[speciesB];
           if (strength === undefined) continue;
 
-          const dxAB = cxB - cxA;
-          const dyAB = cyB - cyA;
+          let dxAB = cxB - cxA;
+          let dyAB = cyB - cyA;
           const dist = Math.sqrt(dxAB * dxAB + dyAB * dyAB);
 
           if (dist > 0 && dist < radius) {
-            const force = strength / dist;
-            vx += dxAB * force;
-            vy += dyAB * force;
+            // distance-based scaling from the interaction matrix
+            let f = strength * (1 - dist / radius);
+
+            // 🟢 short-range repulsion to prevent collapse
+            const minDist = 0.02;        // tweakable "personal space"
+            const repulsionStrength = 0.02; // tweakable
+            if (dist < minDist) {
+              f += -repulsionStrength * (1 - dist / minDist);
+            }
+
+            // normalize direction
+            dxAB /= dist;
+            dyAB /= dist;
+
+            // apply to velocity
+            vx += f * dxAB;
+            vy += f * dyAB;
           }
+
         }
 
         // --- 2️⃣ Update positions ---
@@ -248,9 +313,16 @@ export class ParticleLife {
         }
 
         // Apply friction
-        const friction = 0.5; // closer to 1 = slippery, smaller = more damping
+        const friction = 0.8; // closer to 1 = slippery, smaller = more damping
         vx *= friction;
         vy *= friction;
+
+        const maxSpeed = 0.001; // limit max speed to avoid instability
+        const speed = Math.sqrt(vx * vx + vy * vy);
+        if (speed > maxSpeed) {
+          vx = (vx / speed) * maxSpeed;
+          vy = (vy / speed) * maxSpeed;
+        }
 
         this.velocities[i * 2 + 0] = vx;
         this.velocities[i * 2 + 1] = vy;
