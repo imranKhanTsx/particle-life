@@ -6,6 +6,7 @@ export interface ParticleLifeOptions {
   particleCount?: number;
   species?: number;
   interactionRadius?: number;
+  distribution?: number[];
 }
 
 export class ParticleLife {
@@ -25,22 +26,26 @@ export class ParticleLife {
   speciesIds: Uint8Array<ArrayBuffer>;
   computePipeline!: GPUComputePipeline;
   computeBindGroup!: GPUBindGroup;
+  velocityBuffer!: GPUBuffer;
+  paramsBuffer!: GPUBuffer;
 
   constructor(canvas: HTMLCanvasElement, options: ParticleLifeOptions = {}) {
     console.log(vertex_shader);
     console.log(fragment_shader);
+    console.log(compute_shader);
     this.canvas = canvas;
     this.options = {
       particleCount: options.particleCount ?? 1000,
       species: options.species ?? 3,
       interactionRadius: options.interactionRadius ?? 0.02,
+      distribution: options.distribution ?? [0.4, 0.3, 0.3],
     };
     // Example: 3 species
     this.speciesColors = {
-      0: [1, 0, 0],   // red
-      1: [0, 1, 0],   // green
-      // 2: [0, 0, 1],   // blue
-      2: [1, 1, 0],   // yellow
+      0: [1.0, 0.0, 0.0],   // red
+      1: [0.0, 1.0, 0.0],   // green
+      2: [0.0, 0.0, 1.0],   // blue
+      // 2: [1, 1, 0],   // yellow
     };
     this.speciesIds = new Uint8Array(this.options.particleCount);
 
@@ -51,10 +56,31 @@ export class ParticleLife {
     for (let i = 0; i < this.options.particleCount; i++) {
       this.velocities[i * 2 + 0] = (Math.random() - 0.5) * 0.01;
       this.velocities[i * 2 + 1] = (Math.random() - 0.5) * 0.01;
+      // this.velocities[i * 2 + 0] = 0;
+      // this.velocities[i * 2 + 1] = 0;
     }
 
 
   }
+
+  createUniformBuffer(device: GPUDevice, data: Float32Array): GPUBuffer {
+    // how many bytes actual data takes
+    const byteLength = data.byteLength;
+
+    // round up to the nearest multiple of 64
+    const alignedSize = Math.ceil(byteLength / 64) * 64;
+
+    const buffer = device.createBuffer({
+      size: alignedSize,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // write data into the buffer
+    device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
+
+    return buffer;
+  }
+
 
   async init() {
     const adapter = await navigator.gpu.requestAdapter();
@@ -76,8 +102,7 @@ export class ParticleLife {
     ];
 
     // --- create particle data (your code unchanged) ---
-    const distribution = [0.4, 0.3, 0.3];
-    const counts = distribution.map(r => Math.floor(r * this.options.particleCount));
+    const counts = this.options.distribution.map(r => Math.floor(r * this.options.particleCount));
 
     let index = 0;
     for (let s = 0; s < counts.length; s++) {
@@ -144,7 +169,50 @@ export class ParticleLife {
     const fragmentModule = this.device.createShaderModule({ code: fragment_shader });
     const computeModule = this.device.createShaderModule({ code: compute_shader });
 
-    // --- compute pipeline ---
+    // --- after creating this.particleBuffer and filling it ---
+
+    // 1) create a velocity buffer (one vec2 per particle)
+    const velocityArray = new Float32Array(this.options.particleCount * 2);
+    for (let i = 0; i < this.options.particleCount; i++) {
+      velocityArray[i * 2 + 0] = this.velocities[i * 2 + 0] ?? 0; // already set in ctor but copy to a typed array
+      velocityArray[i * 2 + 1] = this.velocities[i * 2 + 1] ?? 0;
+    }
+
+    this.velocityBuffer = this.device.createBuffer({
+      size: velocityArray.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.velocityBuffer.getMappedRange()).set(velocityArray);
+    this.velocityBuffer.unmap();
+
+    // 2) optional: create a small params uniform buffer (deltaT, radius, particleCount)
+    const paramsArray = new Float32Array([
+      0.016,                    // deltaT
+      this.options.interactionRadius, // ruleRadius
+      0.0,                      // placeholder
+      0.0,                      // padding to 16 bytes if needed
+      this.options.particleCount // we will store particleCount separately as u32 in a separate view below
+    ]);
+
+    // pack particleCount into a separate Uint32Array view (WGSL needs alignment care).
+    const paramsBufferSize = 4 * 4 + 4; // keep it simple
+    this.paramsBuffer = this.createUniformBuffer(this.device, paramsArray);
+    // Write params (we'll use writeBuffer)
+    this.device.queue.writeBuffer(this.paramsBuffer, 0, paramsArray.buffer as ArrayBuffer);
+
+    // Example: 3 species, value = strength of attraction (+) or repulsion (-)
+    const interactionMatrix: number[][] = [
+      [0.0, 0.0, 0.0, 0.0], // Red weakly attracts both, avoids self [red, green, blue]
+      [0.0, 0.0, 0.0, 0.0], // Green weakly attracts both, avoids self [red, green, blue]
+      [0.0, 0.0, 0.2, 0.0], // Blue weakly attracts both, avoids self [red, green, blue]
+    ];
+
+    const matrixData = new Float32Array(interactionMatrix.flat());
+    const interactionMatrixBuffer = this.createUniformBuffer(this.device, matrixData);
+    this.device.queue.writeBuffer(interactionMatrixBuffer, 0, matrixData.buffer as ArrayBuffer);
+
+    // 3) create compute pipeline (you already do this) and compute bind group
     this.computePipeline = this.device.createComputePipeline({
       layout: "auto",
       compute: {
@@ -153,16 +221,17 @@ export class ParticleLife {
       },
     });
 
-    // ✅ compute bind group (connects buffer to compute shader)
+    // create bind group now (layout index 0 must match shader)
     this.computeBindGroup = this.device.createBindGroup({
       layout: this.computePipeline.getBindGroupLayout(0),
       entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.particleBuffer },
-        },
+        { binding: 0, resource: { buffer: this.particleBuffer } }, // storage: particle data floats
+        { binding: 1, resource: { buffer: this.velocityBuffer } }, // storage: velocities vec2
+        { binding: 2, resource: { buffer: this.paramsBuffer } },   // uniform params
+        { binding: 3, resource: { buffer: interactionMatrixBuffer } }, // uniform interaction matrix
       ],
     });
+
 
     // --- render pipeline ---
     this.pipeline = this.device.createRenderPipeline({
@@ -222,114 +291,29 @@ export class ParticleLife {
   start() {
     if (!this.device) throw new Error("Call init() first");
 
-    // Example: 3 species, value = strength of attraction (+) or repulsion (-)
-    const interactionValue = 0.001;
-    const interactionMatrix: number[][] = [
-      [0.001, interactionValue + 0.001, -interactionValue + 0.001],  // Red with [Red, Green, Blue]
-      [-interactionValue + 0.001, 0.001, interactionValue + 0.001],   // Green with [Red, Green, Blue]
-      [interactionValue + 0.001, -interactionValue + 0.001, 0.001],  // Blue with [Red, Green, Blue]
-    ];
-
     const frame = () => {
       const encoder = this.device.createCommandEncoder();
-      const textureView = this.context.getCurrentTexture().createView();
 
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: textureView,
-            loadOp: "clear",
-            storeOp: "store",
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          },
-        ],
-      });
-
-      const wrap = (v: number) => {
-        if (v < -1) return 1;
-        if (v > 1) return -1;
-        return v;
-      };
-
-      // --- 1️⃣ Compute species interactions ---
-      const radius = this.options.interactionRadius; // normalize for -1..1 space
-      for (let i = 0; i < this.options.particleCount; i++) {
-        let vx = this.velocities[i * 2 + 0]!;
-        let vy = this.velocities[i * 2 + 1]!;
-
-        const baseIndexA = i * 4 * 7;
-        let cxA = this.particleData[baseIndexA + 0]!;
-        let cyA = this.particleData[baseIndexA + 1]!;
-
-        const speciesA = this.speciesIds[i]!;
-        const row = interactionMatrix[speciesA];
-
-        for (let j = 0; j < this.options.particleCount; j++) {
-          if (i === j) continue;
-
-          const baseIndexB = j * 4 * 7;
-          const cxB = this.particleData[baseIndexB + 0]!;
-          const cyB = this.particleData[baseIndexB + 1]!;
-          const speciesB = this.speciesIds[j]!;
-          const strength = row?.[speciesB];
-          if (strength === undefined) continue;
-
-          let dxAB = cxB - cxA;
-          let dyAB = cyB - cyA;
-          const dist = Math.sqrt(dxAB * dxAB + dyAB * dyAB);
-
-          if (dist > 0 && dist < radius) {
-            // distance-based scaling from the interaction matrix
-            let f = strength * (1 - dist / radius);
-
-            // 🟢 short-range repulsion to prevent collapse
-            const minDist = 0.02;        // tweakable "personal space"
-            const repulsionStrength = 0.02; // tweakable
-            if (dist < minDist) {
-              f += -repulsionStrength * (1 - dist / minDist);
-            }
-
-            // normalize direction
-            dxAB /= dist;
-            dyAB /= dist;
-
-            // apply to velocity
-            vx += f * dxAB;
-            vy += f * dyAB;
-          }
-
-        }
-
-        // --- 2️⃣ Update positions ---
-        cxA += vx;
-        cyA += vy;
-        cxA = wrap(cxA);
-        cyA = wrap(cyA);
-
-        for (let k = 0; k < 4; k++) {
-          const idx = baseIndexA + k * 7;
-          this.particleData[idx + 0] = cxA;
-          this.particleData[idx + 1] = cyA;
-        }
-
-        // Apply friction
-        const friction = 0.8; // closer to 1 = slippery, smaller = more damping
-        vx *= friction;
-        vy *= friction;
-
-        const maxSpeed = 0.001; // limit max speed to avoid instability
-        const speed = Math.sqrt(vx * vx + vy * vy);
-        if (speed > maxSpeed) {
-          vx = (vx / speed) * maxSpeed;
-          vy = (vy / speed) * maxSpeed;
-        }
-
-        this.velocities[i * 2 + 0] = vx;
-        this.velocities[i * 2 + 1] = vy;
+      // 1️⃣ Run compute shader first
+      {
+        const computePass = encoder.beginComputePass();
+        computePass.setPipeline(this.computePipeline);
+        computePass.setBindGroup(0, this.computeBindGroup);
+        const workgroupCount = Math.ceil(this.options.particleCount / 64);
+        computePass.dispatchWorkgroups(workgroupCount);
+        computePass.end();
       }
 
-      // Push updated positions to GPU
-      this.device.queue.writeBuffer(this.particleBuffer, 0, new Float32Array(this.particleData));
+      // 2️⃣ Render as before
+      const textureView = this.context.getCurrentTexture().createView();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: textureView,
+          loadOp: "clear",
+          storeOp: "store",
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        }],
+      });
 
       pass.setPipeline(this.pipeline);
       pass.setVertexBuffer(0, this.particleBuffer);
@@ -340,6 +324,7 @@ export class ParticleLife {
       this.device.queue.submit([encoder.finish()]);
       requestAnimationFrame(frame);
     };
+
 
     requestAnimationFrame(frame);
   }
