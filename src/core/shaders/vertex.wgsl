@@ -3,6 +3,11 @@ struct VertexOut {
     @location(0) color: vec3f,
     @location(1) localOffset: vec2f,
 };
+struct VertexParams {
+    particleSize: f32,
+    aspectRatio: f32,
+};
+@group(0) @binding(0) var<uniform> params: VertexParams;
 
 @vertex
 fn vertex_main(
@@ -11,10 +16,11 @@ fn vertex_main(
     @location(2) localOffset: vec2f  // quad corner offset
 ) -> VertexOut {
     var out: VertexOut;
-    let particleSize = 0.005; // adjust this for bigger/smaller particles
+    let particleSize = params.particleSize; // adjust this for bigger/smaller particles
 
     // offset the vertex by localOffset scaled by particleSize
-    let pos = center + localOffset * particleSize;
+    let currectoffset = vec2f(localOffset.x*params.aspectRatio, localOffset.y);
+    let pos = center + currectoffset * particleSize;
 
     out.position = vec4f(pos.x, pos.y, 0.0, 1.0);
     out.color = color;
