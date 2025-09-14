@@ -6,9 +6,13 @@ struct Particle {
 struct Params {
   deltaT : f32,
   ruleRadius : f32,
-  placeholder : f32,
   particleCount : f32, // 5th value
   numSpecies : f32,    // 6th value
+  friction : f32,
+  maxSpeed : f32,   // 8th value
+  repelStrength : f32, // 9th value
+  minDistance : f32, // 10th value
+  strengthFactor : f32, // 11th value (not used)
 };
 
 @group(0) @binding(0) var<storage, read_write> particles : array<f32>;  // your packed particleData
@@ -30,9 +34,9 @@ fn compute_main(@builtin(global_invocation_id) id : vec3<u32>) {
   let colorA = vec3f(particles[i * 28 + 2], particles[i * 28 + 3], particles[i * 28 + 4]);
 
   let radius = params.ruleRadius;
-  let minDist = 0.02;      // “personal space” distance
-  let maxSpeed = 0.01;     // limit velocity
-  let repelStrength = 0.01; // repulsion scaling
+  let minDist = params.minDistance;      // “personal space” distance
+  let maxSpeed = params.maxSpeed;     // limit velocity
+  let repelStrength = params.repelStrength; // repulsion scaling
 
   let speciesA : u32 = speciesIds[i];
 
@@ -50,7 +54,7 @@ fn compute_main(@builtin(global_invocation_id) id : vec3<u32>) {
     let normDelta = delta / dist;
 
     let speciesB : u32 = speciesIds[j];
-    let strength = interactionMatrix[speciesA * u32(params.numSpecies) + speciesB] * 0.0001;
+    let strength = interactionMatrix[speciesA * u32(params.numSpecies) + speciesB] * params.strengthFactor;
 
     // linear falloff attraction
     vel += normDelta * strength * (1.0 - dist / radius);
@@ -106,7 +110,7 @@ fn compute_main(@builtin(global_invocation_id) id : vec3<u32>) {
   }
 
   // friction
-  vel *= 0.99;
+  vel *= params.friction;
 
   // write back velocity
   velocities[i] = vel;

@@ -9,7 +9,7 @@ fn fragment_main(in: VertexOut) -> @location(0) vec4f {
     let dist = length(in.localOffset);
 
     // fade edge between 0.9 and 1.0
-    let alpha = 1.0 - smoothstep(0.9, 1.0, dist);
+    let alpha = 1.0 - smoothstep(0.7, 1.0, dist);
 
     // kill pixels fully outside (optional, saves fillrate)
     if (alpha <= 0.0) {

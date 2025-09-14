@@ -30,7 +30,7 @@ export class ParticleLife {
   private particleData!: Float32Array;
   bindGroup?: GPUBindGroup;
   velocities: Float32Array<ArrayBuffer>;
-  speciesColors: Record<number, [number, number, number]>;
+  // speciesColors: Record<number, [number, number, number]>;
   speciesIds: Uint8Array<ArrayBuffer>;
   computePipeline!: GPUComputePipeline;
   computeBindGroup!: GPUBindGroup;
@@ -60,16 +60,9 @@ export class ParticleLife {
         0: [1, 0, 0],
         1: [0, 1, 0],
         2: [0, 0, 1],
-        // 3: [1, 1, 0]
       },
     };
-    // Example: 4 species
-    this.speciesColors = options.speciesColors ?? {
-      0: [1, 0, 0], // Red
-      1: [0, 1, 0], // Green
-      2: [0, 0, 1], // Blue
-      // 3: [1, 1, 0], // Yellow
-    };
+
     this.speciesIds = new Uint8Array(this.options.particleCount);
 
 
@@ -137,7 +130,7 @@ export class ParticleLife {
     for (let i = 0; i < this.options.particleCount; i++) {
       const cx = Math.random() * 2 - 1;
       const cy = Math.random() * 2 - 1;
-      const [r, g, b] = this.speciesColors[Number(this.speciesIds[i])] ?? [1, 1, 1];
+      const [r, g, b] = this.options.speciesColors[Number(this.speciesIds[i])] ?? [1, 1, 1];
 
       for (let j = 0; j < 4; j++) {
         const [lx, ly] = cornerOffsets[j]!;
@@ -219,9 +212,13 @@ export class ParticleLife {
     const paramsArray = new Float32Array([
       0.016,                    // deltaT
       this.options.interactionRadius, // ruleRadius
-      0.0,                      // placeholder
       this.options.particleCount, // we will store particleCount separately as u32 in a separate view below
       this.options.species,
+      0.99, // friction
+      0.01, // maxSpeed
+      0.01, // repelStrength
+      0.015, // minDistance
+      0.00015, // strength scaling factor
     ]);
     console.log("paramsArray", paramsArray);
 

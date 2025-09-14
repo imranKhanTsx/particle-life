@@ -4,7 +4,7 @@ const canvas = document.querySelector("canvas")!;
 const min = Math.min(window.innerWidth, window.innerHeight);
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
-console.log("canvas", canvas.height / canvas.width);
+
 
 const particleLife = new ParticleLife(canvas, {
     particleCount: 2000, species: 4, interactionRadius: 0.05, distribution: [0.25, 0.25, 0.25, 0.25],
