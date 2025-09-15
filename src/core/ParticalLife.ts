@@ -18,16 +18,16 @@ export interface ParticleLifeOptions {
 }
 
 export class ParticleLife {
-  private canvas: HTMLCanvasElement;
-  private device!: GPUDevice;
-  private context!: GPUCanvasContext;
-  private pipeline!: GPURenderPipeline;
-  private particleBuffer!: GPUBuffer;
-  private indexBuffer!: GPUBuffer;
+  canvas: HTMLCanvasElement;
+  device!: GPUDevice;
+  context!: GPUCanvasContext;
+  pipeline!: GPURenderPipeline;
+  particleBuffer!: GPUBuffer;
+  indexBuffer!: GPUBuffer;
 
-  private options: Required<ParticleLifeOptions>;
+  options: Required<ParticleLifeOptions>;
   // private particlePositions!: Float32Array;
-  private particleData!: Float32Array;
+  particleData!: Float32Array;
   bindGroup?: GPUBindGroup;
   velocities: Float32Array<ArrayBuffer>;
   // speciesColors: Record<number, [number, number, number]>;
@@ -37,6 +37,11 @@ export class ParticleLife {
   velocityBuffer!: GPUBuffer;
   paramsBuffer!: GPUBuffer;
   vertexBindGroup!: GPUBindGroup;
+  paramsArray: Float32Array<ArrayBuffer>;
+  speciesIdBuffer!: GPUBuffer;
+  interactionMatrixBuffer!: GPUBuffer;
+  vertexParamsBuffer!: GPUBuffer;
+  vertexParams: Float32Array<ArrayBuffer>;
 
   constructor(canvas: HTMLCanvasElement, options: ParticleLifeOptions = {}) {
     this.canvas = canvas;
@@ -75,6 +80,19 @@ export class ParticleLife {
       // this.velocities[i * 2 + 0] = 0;
       // this.velocities[i * 2 + 1] = 0;
     }
+
+    this.paramsArray = new Float32Array([
+      0.016,                    // deltaT
+      this.options.interactionRadius, // ruleRadius
+      this.options.particleCount, // we will store particleCount separately as u32 in a separate view below
+      this.options.species,
+      0.99, // friction
+      0.01, // maxSpeed
+      0.01, // repelStrength
+      0.015, // minDistance
+      0.00015, // strength scaling factor
+    ]);
+    this.vertexParams = new Float32Array([this.options.particleSize, this.canvas.height / this.canvas.width]);
   }
 
   createUniformBuffer(device: GPUDevice, data: Float32Array): GPUBuffer {
@@ -157,12 +175,11 @@ export class ParticleLife {
     new Float32Array(this.particleBuffer.getMappedRange()).set(this.particleData);
     this.particleBuffer.unmap();
 
-    const vertexParams = new Float32Array([this.options.particleSize, this.canvas.height / this.canvas.width]);
-    const vertexParamsBuffer = this.device.createBuffer({
-      size: vertexParams.byteLength,
+    this.vertexParamsBuffer = this.device.createBuffer({
+      size: this.vertexParams.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(vertexParamsBuffer, 0, vertexParams.buffer);
+    this.device.queue.writeBuffer(this.vertexParamsBuffer, 0, this.vertexParams.buffer);
 
 
     // --- indices (your code unchanged) ---
@@ -209,32 +226,22 @@ export class ParticleLife {
     this.velocityBuffer.unmap();
 
     // 2) optional: create a small params uniform buffer (deltaT, radius, particleCount)
-    const paramsArray = new Float32Array([
-      0.016,                    // deltaT
-      this.options.interactionRadius, // ruleRadius
-      this.options.particleCount, // we will store particleCount separately as u32 in a separate view below
-      this.options.species,
-      0.99, // friction
-      0.01, // maxSpeed
-      0.01, // repelStrength
-      0.015, // minDistance
-      0.00015, // strength scaling factor
-    ]);
-    console.log("paramsArray", paramsArray);
 
-    this.paramsBuffer = this.createUniformBuffer(this.device, paramsArray);
-    this.device.queue.writeBuffer(this.paramsBuffer, 0, paramsArray.buffer as ArrayBuffer);
+    console.log("paramsArray", this.paramsArray);
+
+    this.paramsBuffer = this.createUniformBuffer(this.device, this.paramsArray);
+    this.device.queue.writeBuffer(this.paramsBuffer, 0, this.paramsArray.buffer as ArrayBuffer);
 
     // Example: 3 species, value = strength of attraction (+) or repulsion (-)
 
     const speciesIdArray = new Uint32Array(this.options.particleCount);
     speciesIdArray.set(this.speciesIds);
 
-    const speciesIdBuffer = this.device.createBuffer({
+    this.speciesIdBuffer = this.device.createBuffer({
       size: speciesIdArray.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(speciesIdBuffer, 0, speciesIdArray.buffer, speciesIdArray.byteOffset, speciesIdArray.byteLength);
+    this.device.queue.writeBuffer(this.speciesIdBuffer, 0, speciesIdArray.buffer, speciesIdArray.byteOffset, speciesIdArray.byteLength);
 
     const numSpecies = this.options.species;
     if (this.options.intersectionMatrix.flat().length !== numSpecies * numSpecies) {
@@ -243,11 +250,11 @@ export class ParticleLife {
     const matrixData = this.options.intersectionMatrix.flat();
     const dataArray = new Float32Array(matrixData.length);
     dataArray.set(matrixData, 0);
-    const interactionMatrixBuffer = this.device.createBuffer({
+    this.interactionMatrixBuffer = this.device.createBuffer({
       size: dataArray.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(interactionMatrixBuffer, 0, dataArray.buffer, dataArray.byteOffset, dataArray.byteLength);
+    this.device.queue.writeBuffer(this.interactionMatrixBuffer, 0, dataArray.buffer, dataArray.byteOffset, dataArray.byteLength);
 
     // 3) create compute pipeline (you already do this) and compute bind group
     this.computePipeline = this.device.createComputePipeline({
@@ -265,8 +272,8 @@ export class ParticleLife {
         { binding: 0, resource: { buffer: this.particleBuffer } }, // storage: particle data floats
         { binding: 1, resource: { buffer: this.velocityBuffer } }, // storage: velocities vec2
         { binding: 2, resource: { buffer: this.paramsBuffer } },   // uniform params
-        { binding: 3, resource: { buffer: interactionMatrixBuffer } }, // storage: interaction matrix
-        { binding: 4, resource: { buffer: speciesIdBuffer } }, // storage: species ids
+        { binding: 3, resource: { buffer: this.interactionMatrixBuffer } }, // storage: interaction matrix
+        { binding: 4, resource: { buffer: this.speciesIdBuffer } }, // storage: species ids
       ],
     });
 
@@ -317,7 +324,7 @@ export class ParticleLife {
       entries: [
         {
           binding: 0, // match @binding(0) in vertex shader
-          resource: { buffer: vertexParamsBuffer },
+          resource: { buffer: this.vertexParamsBuffer },
         },
       ],
     });

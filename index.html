@@ -36,43 +36,37 @@
   <div class="controls">
     <button id="startStopBtn">Start/Stop</button>
     <button id="resetBtn">Reset</button>
-    <div>
-      <label for="gravity">Gravity:</label>
-      <input type="range" id="gravity" min="0" max="1" step="0.01" value="0.1" />
-      <span id="gravityValue">0.1</span>
+    <div id="repelControl">
+      <label for="Repulsion">Repulsion:</label>
+      <input type="number" id="repelStrength" min="-1" max="1" step="0.001" value="0.01" />
     </div>
     <div>
       <label for="numParticles">Number of Particles:</label>
-      <input type="number" id="numParticles" value="100" min="1" max="1000" />
+      <input type="number" id="numParticles" value="2000" min="1" max="5000" />
     </div>
     <div>
       <label for="particleSize">Particle Size:</label>
       <input type="number" id="particleSize" value="0.005" min="0.001" max="0.01" step="0.001" />
     </div>
     <div>
-      <label for="interactionRadius">Interaction Radius:</label>
-      <input type="number" id="interactionRadius" value="0.05" min="0.01" max="1.0" step="0.01" />
+      <label for="interaction-radius">Interaction Radius:</label>
+      <input type="number" id="interactionRadius" value="0.05" min="0.0" max="1.0" step="0.001" />
     </div>
     <div>
       <label for="friction">Friction:</label>
-      <input type="range" id="friction" min="0.01" max="1.0" step="0.01" value="0.99" />
-      <span id="frictionValue">0.99</span>
+      <input type="number" id="friction" min="0.0" max="1.0" step="0.01" value="0.99" />
     </div>
     <div>
       <label for="maxSpeed">Max Speed:</label>
-      <input type="number" id="maxSpeed" value="0.01" min="0.001" max="0.1" step="0.001" />
-    </div>
-    <div>
-      <label for="repelStrength">Repulsion Strength:</label>
-      <input type="number" id="repelStrength" value="0.01" min="0.001" max="0.1" step="0.001" />
+      <input type="number" id="maxSpeed" value="0.01" min="0.0" max="0.1" step="0.001" />
     </div>
     <div>
       <label for="minDistance">Min Distance:</label>
-      <input type="number" id="minDistance" value="0.015" min="0.001" max="0.1" step="0.001" />
+      <input type="number" id="minDistance" value="0.015" min="0.0" max="0.1" step="0.001" />
     </div>
     <div>
       <label for="strengthFactor">Strength Factor:</label>
-      <input type="number" id="strengthFactor" value="0.00015" min="0.00001" max="0.001" step="0.00001" />
+      <input type="number" id="strengthFactor" value="0.00015" min="0.0" max="0.001" step="0.00001" />
     </div>
   </div>
   <canvas id="sim" width="800" height="600" style="border:1px solid black"></canvas>

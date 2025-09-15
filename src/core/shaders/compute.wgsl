@@ -6,13 +6,13 @@ struct Particle {
 struct Params {
   deltaT : f32,
   ruleRadius : f32,
-  particleCount : f32, // 5th value
-  numSpecies : f32,    // 6th value
+  particleCount : f32, 
+  numSpecies : f32,    
   friction : f32,
-  maxSpeed : f32,   // 8th value
-  repelStrength : f32, // 9th value
-  minDistance : f32, // 10th value
-  strengthFactor : f32, // 11th value (not used)
+  maxSpeed : f32,   
+  repelStrength : f32, 
+  minDistance : f32, 
+  strengthFactor : f32, 
 };
 
 @group(0) @binding(0) var<storage, read_write> particles : array<f32>;  // your packed particleData
