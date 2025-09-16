@@ -5,29 +5,87 @@
   <meta charset="UTF-8" />
   <title>Particle Life Demo</title>
   <style>
+    /* === Base Reset & Layout === */
     body {
       margin: 0;
-      padding: 0;
-      overflow: hidden;
+      height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      background-color: rgb(128, 128, 128);
+      background: radial-gradient(circle at center, #2b2b2b 0%, #1a1a1a 100%);
+      overflow: hidden;
+      font-family: "Segoe UI", Roboto, sans-serif;
+      color: #f0f0f0;
     }
 
+    /* === Canvas === */
+    #sim {
+      border: none;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.6);
+      border-radius: 12px;
+    }
+
+    /* === Controls Panel === */
     .controls {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 10px;
-      border-radius: 5px;
-      z-index: 10;
+      top: 20px;
+      left: 20px;
+      background: rgba(20, 20, 20, 0.85);
+      backdrop-filter: blur(10px);
+      padding: 16px 20px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      transition: opacity 0.25s ease;
     }
 
-    .controls button,
-    .controls input {
-      margin: 5px;
+    /* Headings / Labels */
+    .controls label {
+      display: block;
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+      color: #d0d0d0;
+    }
+
+    /* Buttons */
+    .controls button {
+      background: linear-gradient(135deg, #4e8ef7, #6c5ce7);
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.3s;
+    }
+
+    .controls button:hover {
+      background: linear-gradient(135deg, #5aa0ff, #7b6dff);
+    }
+
+    /* Inputs */
+    .controls input[type="number"] {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #2b2b2b;
+      color: #eee;
+      outline: none;
+      transition: border 0.2s;
+    }
+
+    .controls input[type="number"]:focus {
+      border-color: #4e8ef7;
+      box-shadow: 0 0 4px #4e8ef7;
+    }
+
+    /* Optional toggle effect */
+    .controls[hidden] {
+      opacity: 0;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -58,7 +116,7 @@
     </div>
     <div>
       <label for="maxSpeed">Max Speed:</label>
-      <input type="number" id="maxSpeed" value="0.01" min="0.0" max="0.1" step="0.001" />
+      <input type="number" id="maxSpeed" value="0.01" min="0.0" max="0.1" step="0.0001" />
     </div>
     <div>
       <label for="minDistance">Min Distance:</label>

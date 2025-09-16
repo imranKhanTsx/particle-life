@@ -10,10 +10,10 @@ canvas.height = window.innerHeight;
 const particleLife = new ParticleLife(canvas, {
     particleCount: 2000, species: 4, interactionRadius: 0.05, distribution: [0.25, 0.25, 0.25, 0.25],
     intersectionMatrix: [
-        [0.5, 0.0, 0.0, 0.0],
-        [0.0, 0.5, 0.0, 0.0],
-        [0.0, 0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.0, 0.5],
+        [-0.5, 0.4, 0.3, 0.2],
+        [0.4, -0.5, 0.3, -0.2],
+        [0.1, 0.2, -0.5, 0.1],
+        [-0.4, 0.2, 0.3, -0.5],
     ],
     speciesColors: {
         0: [1, 0, 0],
@@ -22,6 +22,7 @@ const particleLife = new ParticleLife(canvas, {
         3: [1, 1, 0],
     },
     particleSize: 0.005,
+    maxSpeed:0.0001
 });
 await particleLife.init();
 particleLife.start();
