@@ -208,21 +208,13 @@ export class ParticleLife {
     const fragmentModule = this.device.createShaderModule({ code: fragment_shader });
     const computeModule = this.device.createShaderModule({ code: compute_shader });
 
-    // --- after creating this.particleBuffer and filling it ---
-
-    // 1) create a velocity buffer (one vec2 per particle)
-    const velocityArray = new Float32Array(this.options.particleCount * 2);
-    for (let i = 0; i < this.options.particleCount; i++) {
-      velocityArray[i * 2 + 0] = this.velocities[i * 2 + 0] ?? 0; // already set in ctor but copy to a typed array
-      velocityArray[i * 2 + 1] = this.velocities[i * 2 + 1] ?? 0;
-    }
 
     this.velocityBuffer = this.device.createBuffer({
-      size: velocityArray.byteLength,
+      size: this.velocities.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       mappedAtCreation: true,
     });
-    new Float32Array(this.velocityBuffer.getMappedRange()).set(velocityArray);
+    new Float32Array(this.velocityBuffer.getMappedRange()).set(this.velocities);
     this.velocityBuffer.unmap();
 
     // 2) optional: create a small params uniform buffer (deltaT, radius, particleCount)
