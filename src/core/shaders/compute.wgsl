@@ -97,10 +97,10 @@ fn compute_main(@builtin(global_invocation_id) id : vec3<u32>) {
   // }
 
   //wrap around edges 
-  if (posX < -1.0) { posX = 1.0; } 
-  if (posX > 1.0) { posX = -1.0; } 
-  if (posY < -1.0) { posY = 1.0; } 
-  if (posY > 1.0) { posY = -1.0; }
+  if (posX < -1.0) { posX = 0.5; } 
+  if (posX > 1.0) { posX = -0.5; } 
+  if (posY < -1.0) { posY = 0.5; } 
+  if (posY > 1.0) { posY = -0.5; }
 
   // write back to all 4 vertices
   for (var k = 0u; k < 4u; k++) {
